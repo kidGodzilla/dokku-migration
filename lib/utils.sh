@@ -222,7 +222,7 @@ EOF
   $ssh_command "bash /tmp/$temp_script_name $app /tmp/$env_file_name"
   
   # Cleanup
-  $ssh_command "rm /tmp/$temp_script_name /tmp/$env_file_name"
+  $ssh_command "rm -f /tmp/$temp_script_name /tmp/$env_file_name"
   rm "$temp_script"
 }
 
