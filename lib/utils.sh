@@ -72,6 +72,11 @@ app_exists() {
   return $?
 }
 
+app_exists_on_dest() {
+  local app="$1"
+  $DEST_SSH "dokku apps:exists $app" &> /dev/null
+}
+
 # Function to check if database exists
 db_exists() {
   local db="$1"
