@@ -76,7 +76,7 @@ for db in "${DBS[@]}"; do
       log "${RED}Database dump not found: $DB_DUMP_PATH${NC}"
       log "${YELLOW}Skipping database $db import${NC}"
       continue
-  }
+  fi
  
   # Check if database exists
   if db_exists_on_dest "$db"; then
