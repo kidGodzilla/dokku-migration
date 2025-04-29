@@ -96,7 +96,7 @@ for app in "${APPS[@]}"; do
   
   # Import environment variables using custom function
   if [ -f "$TEMP_DIR/apps/$app/env" ]; then
-    import_env_vars "$app" "$TEMP_DIR/apps/$app/env" "$DEST_SSH"
+    import_env_vars "$app" "$TEMP_DIR/apps/$app/env" "$DEST_SSH" "$DEST_SCP" "$DEST_SERVER_IP"
     log "Imported environment variables for $app"
   else
     log "WARNING: No environment file found for $app"
