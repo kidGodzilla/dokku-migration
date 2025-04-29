@@ -171,7 +171,7 @@ import_env_vars2() {
   # Create a temporary script to parse and import the environment variables
   local temp_script=$(mktemp)
   
-  cat > "$temp_script" << 'EOF'
+  cat > "$temp_script" << EOF
 #!/bin/bash
 app="\$1"
 env_file="\$2"
