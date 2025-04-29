@@ -223,7 +223,7 @@ EOF
   
   # Cleanup
   $ssh_command "rm -f /tmp/$temp_script_name /tmp/$env_file_name"
-  rm "$temp_script"
+  rm -f "$temp_script"
 }
 
 # ===== Database Functions =====
