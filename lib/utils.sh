@@ -9,6 +9,10 @@ if [ -z "$GREEN" ]; then
   NC='\033[0m' # No Color
 fi
 
+log() {
+  echo -e "$@"
+}
+
 # ===== Configuration Functions =====
 # Function to validate required config variables
 validate_config() {
