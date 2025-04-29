@@ -159,6 +159,73 @@ EOF
   rm "$temp_script"
 }
 
+import_env_vars2() {
+  local app="$1"
+  local env_file="$2"
+  local ssh_command="$3"
+  local scp_command="$4"
+  local server_ip="$5"
+  
+  log "Importing environment variables for $app..."
+  
+  # Create a temporary script to parse and import the environment variables
+  local temp_script=$(mktemp)
+  
+  cat > "$temp_script" << 'EOF'
+#!/bin/bash
+app="\$1"
+env_file="\$2"
+
+# Check if file exists
+if [ ! -f "\$env_file" ]; then
+  echo "Environment file \$env_file not found"
+  exit 1
+fi
+
+# Read each line and extract key/value pairs
+while IFS= read -r line || [[ -n "\$line" ]]; do
+  if [[ -z "\$line" || "\$line" == \#* ]]; then
+    continue
+  fi
+  
+  if [[ "\$line" =~ ^(export[[:space:]]+)?([^=]+)=(.*)\$ ]]; then
+    key="\${BASH_REMATCH[2]}"
+    value="\${BASH_REMATCH[3]}"
+    
+    # Remove quotes
+    value="\${value#\"}"
+    value="\${value%\"}"
+    value="\${value#\'}"
+    value="\${value%\'}"
+    
+    echo "Setting \$key"
+    
+    dokku config:set "\$app" "\$key=\$value" --no-restart
+  fi
+done < "\$env_file"
+
+echo "Environment variables imported for \$app"
+EOF
+
+  chmod +x "$temp_script"
+  local temp_script_name=$(basename "$temp_script")
+  
+  # Copy temp script
+  $scp_command "$temp_script" "root@$server_ip:/tmp/$temp_script_name"
+  $ssh_command "chmod +x /tmp/$temp_script_name"
+  
+  # Copy env file
+  local env_file_name=$(basename "$env_file")
+  $scp_command "$env_file" "root@$server_ip:/tmp/$env_file_name"
+  
+  # Execute script
+  $ssh_command "bash /tmp/$temp_script_name $app /tmp/$env_file_name"
+  
+  # Cleanup
+  $ssh_command "rm /tmp/$temp_script_name /tmp/$env_file_name"
+  rm "$temp_script"
+}
+
 # ===== Database Functions =====
 # Function to disable foreign key constraints
 disable_foreign_keys() {
