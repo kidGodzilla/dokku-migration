@@ -53,6 +53,11 @@ test_ssh_connection() {
   fi
 }
 
+test_connections() {
+  test_ssh_connection "$SOURCE_SERVER_NAME" "$SOURCE_SSH"
+  test_ssh_connection "$DEST_SERVER_NAME" "$DEST_SSH"
+}
+
 # ===== Resource Existence Check Functions =====
 # Function to check if app exists
 app_exists() {
