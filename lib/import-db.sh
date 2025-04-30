@@ -28,83 +28,29 @@ if [ -z "$CONFIG_FILE" ]; then
     exit 1
 fi
 
-# Debug: Show config file contents
-echo "DEBUG: Config file contents from $CONFIG_FILE"
-cat "$CONFIG_FILE"
-echo "END OF CONFIG FILE"
-
 # Source the config file
-echo "Sourcing config file: $CONFIG_FILE"
 source "$CONFIG_FILE"
 
 # Source utility functions
 source "$(dirname "$0")/utils.sh"
 
-# DEBUG: Show arrays exactly as they appear
-echo "===== DEBUG: ARRAY CONTENTS ====="
-echo "DBS array declaration: DBS=(${DBS[@]@Q})"
-echo "MONGO_DBS array declaration: MONGO_DBS=(${MONGO_DBS[@]@Q})"
-echo "REDIS_DBS array declaration: REDIS_DBS=(${REDIS_DBS[@]@Q})"
-echo "DBS count: ${#DBS[@]}"
-echo "MONGO_DBS count: ${#MONGO_DBS[@]}"
-echo "REDIS_DBS count: ${#REDIS_DBS[@]}"
-
-# DEBUG: Verify array contents with loop
-echo "DBS array contents:"
-for i in "${!DBS[@]}"; do
-    echo "  [$i] = ${DBS[$i]}"
-done
-
-echo "MONGO_DBS array contents:"
-for i in "${!MONGO_DBS[@]}"; do
-    echo "  [$i] = ${MONGO_DBS[$i]}"
-done
-
-echo "REDIS_DBS array contents:"
-for i in "${!REDIS_DBS[@]}"; do
-    echo "  [$i] = ${REDIS_DBS[$i]}"
-done
-
 # If MONGO_DBS isn't set, initialize it as an empty array
 if [ -z "${MONGO_DBS+x}" ]; then
-    echo "MONGO_DBS not set, initializing as empty array"
+    log "MONGO_DBS not set, initializing as empty array"
     MONGO_DBS=()
 fi
 
 # If REDIS_DBS isn't set, initialize it as an empty array
 if [ -z "${REDIS_DBS+x}" ]; then
-    echo "REDIS_DBS not set, initializing as empty array"
+    log "REDIS_DBS not set, initializing as empty array"
     REDIS_DBS=()
 fi
 
 # Create an array of all databases
 ALL_DBS=("${DBS[@]}" "${MONGO_DBS[@]}" "${REDIS_DBS[@]}")
 
-# DEBUG: Verify ALL_DBS contents
-echo "ALL_DBS array contents:"
-for i in "${!ALL_DBS[@]}"; do
-    echo "  [$i] = ${ALL_DBS[$i]}"
-done
-
 # Test SSH connections
 test_connections
-
-# More detailed output for DB lists
-echo "DEBUG DB ARRAYS IN DETAIL:"
-echo "Postgres DBs (${#DBS[@]} total):"
-for idx in "${!DBS[@]}"; do
-    echo "  $idx: ${DBS[$idx]}"
-done
-
-echo "MongoDB DBs (${#MONGO_DBS[@]} total):"
-for idx in "${!MONGO_DBS[@]}"; do
-    echo "  $idx: ${MONGO_DBS[$idx]}"
-done
-
-echo "Redis DBs (${#REDIS_DBS[@]} total):"
-for idx in "${!REDIS_DBS[@]}"; do
-    echo "  $idx: ${REDIS_DBS[$idx]}"
-done
 
 # Confirm before proceeding
 echo -e "${YELLOW}This script will import the following databases:${NC}"
