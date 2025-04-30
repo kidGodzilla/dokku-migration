@@ -28,6 +28,11 @@ if [ -z "$CONFIG_FILE" ]; then
     exit 1
 fi
 
+# Debug: Show config file contents
+echo "DEBUG: Config file contents from $CONFIG_FILE"
+cat "$CONFIG_FILE"
+echo "END OF CONFIG FILE"
+
 # Source the config file
 echo "Sourcing config file: $CONFIG_FILE"
 source "$CONFIG_FILE"
@@ -35,11 +40,30 @@ source "$CONFIG_FILE"
 # Source utility functions
 source "$(dirname "$0")/utils.sh"
 
-# Display raw array contents for debugging
-echo "DEBUG RAW ARRAYS:"
-echo "DBS array: ${DBS[@]}"
-echo "MONGO_DBS array: ${MONGO_DBS[@]}"
-echo "REDIS_DBS array: ${REDIS_DBS[@]}"
+# DEBUG: Show arrays exactly as they appear
+echo "===== DEBUG: ARRAY CONTENTS ====="
+echo "DBS array declaration: DBS=(${DBS[@]@Q})"
+echo "MONGO_DBS array declaration: MONGO_DBS=(${MONGO_DBS[@]@Q})"
+echo "REDIS_DBS array declaration: REDIS_DBS=(${REDIS_DBS[@]@Q})"
+echo "DBS count: ${#DBS[@]}"
+echo "MONGO_DBS count: ${#MONGO_DBS[@]}"
+echo "REDIS_DBS count: ${#REDIS_DBS[@]}"
+
+# DEBUG: Verify array contents with loop
+echo "DBS array contents:"
+for i in "${!DBS[@]}"; do
+    echo "  [$i] = ${DBS[$i]}"
+done
+
+echo "MONGO_DBS array contents:"
+for i in "${!MONGO_DBS[@]}"; do
+    echo "  [$i] = ${MONGO_DBS[$i]}"
+done
+
+echo "REDIS_DBS array contents:"
+for i in "${!REDIS_DBS[@]}"; do
+    echo "  [$i] = ${REDIS_DBS[$i]}"
+done
 
 # If MONGO_DBS isn't set, initialize it as an empty array
 if [ -z "${MONGO_DBS+x}" ]; then
@@ -56,12 +80,11 @@ fi
 # Create an array of all databases
 ALL_DBS=("${DBS[@]}" "${MONGO_DBS[@]}" "${REDIS_DBS[@]}")
 
-# Display array contents after initialization
-echo "DEBUG ARRAYS AFTER INITIALIZATION:"
-echo "DBS array: ${DBS[@]}"
-echo "MONGO_DBS array: ${MONGO_DBS[@]}"
-echo "REDIS_DBS array: ${REDIS_DBS[@]}"
-echo "ALL_DBS array: ${ALL_DBS[@]}"
+# DEBUG: Verify ALL_DBS contents
+echo "ALL_DBS array contents:"
+for i in "${!ALL_DBS[@]}"; do
+    echo "  [$i] = ${ALL_DBS[$i]}"
+done
 
 # Test SSH connections
 test_connections
@@ -111,9 +134,14 @@ fi
 get_db_type() {
   local db="$1"
   
+  # DEBUG: Show what we're checking
+  echo "DEBUG: Checking type for db=$db"
+  
   # Check if db is in MONGO_DBS
   for mongo_db in "${MONGO_DBS[@]}"; do
+    echo "  Comparing with mongo_db=$mongo_db"
     if [[ "$db" == "$mongo_db" ]]; then
+      echo "  MATCH FOUND in MONGO_DBS!"
       echo "mongo"
       return
     fi
@@ -121,15 +149,27 @@ get_db_type() {
   
   # Check if db is in REDIS_DBS
   for redis_db in "${REDIS_DBS[@]}"; do
+    echo "  Comparing with redis_db=$redis_db"
     if [[ "$db" == "$redis_db" ]]; then
+      echo "  MATCH FOUND in REDIS_DBS!"
       echo "redis"
       return
     fi
   done
   
   # Default to postgres
+  echo "  No match in special arrays, defaulting to postgres"
   echo "postgres"
 }
+
+# DEBUG: Test get_db_type function for each database
+echo "===== TESTING TYPE DETECTION ====="
+for db in "${ALL_DBS[@]}"; do
+    echo "Testing type detection for $db:"
+    db_type=$(get_db_type "$db")
+    echo "Result: $db is a $db_type database"
+    echo ""
+done
 
 # Check if database exists on destination
 db_exists_on_dest() {
