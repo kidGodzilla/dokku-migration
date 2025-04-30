@@ -52,9 +52,21 @@ ALL_DBS=("${DBS[@]}" "${MONGO_DBS[@]}" "${REDIS_DBS[@]}")
 # Confirm before proceeding
 echo -e "${YELLOW}This script will export the following apps and databases:${NC}"
 printf "Apps: %s\n" "${APPS[@]}"
-printf "Postgres DBs: %s\n" "${DBS[@]}"
-printf "MongoDB DBs: %s\n" "${MONGO_DBS[@]}"
-printf "Redis DBs: %s\n" "${REDIS_DBS[@]}"
+
+echo "Postgres DBs:"
+for db in "${DBS[@]}"; do
+    echo "  - $db"
+done
+
+echo "MongoDB DBs:"
+for db in "${MONGO_DBS[@]}"; do
+    echo "  - $db"
+done
+
+echo "Redis DBs:"
+for db in "${REDIS_DBS[@]}"; do
+    echo "  - $db"
+done
 echo -e "${YELLOW}From $SOURCE_SERVER_NAME ($SOURCE_SERVER_IP)${NC}"
 read -p "Do you want to continue? (y/n) " -n 1 -r
 echo
