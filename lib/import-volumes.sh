@@ -99,7 +99,7 @@ for app in "${VOLUME_DATA_APPS[@]}"; do
             host_path="${BASH_REMATCH[1]}"
             container_path="${BASH_REMATCH[2]}"
             
-            log "Found mount: /var/lib/dokku/data/storage/$host_path:$container_path"
+            log "Found mount: /var/lib/dokku/data/storage/$host_path:/$container_path"
             
             # Check if directory exists
             if [ ! -d "/var/lib/dokku/data/storage/$host_path" ]; then
@@ -108,9 +108,10 @@ for app in "${VOLUME_DATA_APPS[@]}"; do
                 mkdir -p "/var/lib/dokku/data/storage/$host_path"
             fi
             
-            # Mount the volume
-            log "Mounting volume for $app: /var/lib/dokku/data/storage/$host_path:$container_path"
-            if dokku storage:mount "$app" "/var/lib/dokku/data/storage/$host_path:$container_path"; then
+            # Mount the volume exactly as in docs
+            mount_path="/var/lib/dokku/data/storage/$host_path:/$container_path"
+            log "Mounting volume for $app: $mount_path"
+            if dokku storage:mount "$app" "$mount_path"; then
                 log "${GREEN}Successfully mounted volume for $app${NC}"
             else
                 log "${RED}Failed to mount volume for $app${NC}"
