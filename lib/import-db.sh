@@ -34,15 +34,27 @@ source "$CONFIG_FILE"
 # Source utility functions
 source "$(dirname "$0")/utils.sh"
 
-# Database type (default to postgres but can be set via environment)
-DB_TYPE="${DB_TYPE:-postgres}"
+# If MONGO_DBS isn't set, initialize it as an empty array
+if [ -z "${MONGO_DBS+x}" ]; then
+    MONGO_DBS=()
+fi
+
+# If REDIS_DBS isn't set, initialize it as an empty array
+if [ -z "${REDIS_DBS+x}" ]; then
+    REDIS_DBS=()
+fi
+
+# Create an array of all databases
+ALL_DBS=("${DBS[@]}" "${MONGO_DBS[@]}" "${REDIS_DBS[@]}")
 
 # Test SSH connections
 test_connections
 
 # Confirm before proceeding
-echo -e "${YELLOW}This script will import the following $DB_TYPE databases:${NC}"
-printf "Databases: %s\n" "${DBS[@]}"
+echo -e "${YELLOW}This script will import the following databases:${NC}"
+printf "Postgres DBs: %s\n" "${DBS[@]}"
+printf "MongoDB DBs: %s\n" "${MONGO_DBS[@]}"
+printf "Redis DBs: %s\n" "${REDIS_DBS[@]}"
 echo -e "${YELLOW}To $DEST_SERVER_NAME ($DEST_SERVER_IP)${NC}"
 read -p "Do you want to continue? (y/n) " -n 1 -r
 echo
@@ -51,12 +63,37 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
   exit 1
 fi
 
+# Helper function to get database type
+get_db_type() {
+  local db="$1"
+  
+  # Check if db is in MONGO_DBS
+  for mongo_db in "${MONGO_DBS[@]}"; do
+    if [[ "$db" == "$mongo_db" ]]; then
+      echo "mongo"
+      return
+    fi
+  done
+  
+  # Check if db is in REDIS_DBS
+  for redis_db in "${REDIS_DBS[@]}"; do
+    if [[ "$db" == "$redis_db" ]]; then
+      echo "redis"
+      return
+    fi
+  done
+  
+  # Default to postgres
+  echo "postgres"
+}
+
 # Check if database exists on destination
 db_exists_on_dest() {
   local db="$1"
+  local db_type="$2"
   local output
   
-  output=$($DEST_SSH "dokku $DB_TYPE:list" | grep -w "$db" || echo "")
+  output=$($DEST_SSH "dokku $db_type:list" | grep -w "$db" || echo "")
   
   if [[ -n "$output" ]]; then
     return 0  # exists
@@ -66,12 +103,15 @@ db_exists_on_dest() {
 }
 
 # Import databases
-log "${GREEN}Importing $DB_TYPE databases to $DEST_SERVER_NAME...${NC}"
-for db in "${DBS[@]}"; do
-  log "Importing database $db..."
+log "${GREEN}Importing databases to $DEST_SERVER_NAME...${NC}"
+for db in "${ALL_DBS[@]}"; do
+  # Get the database type for this database
+  db_type=$(get_db_type "$db")
+  
+  log "Importing $db_type database: $db..."
   
   # Check database dump path
-  DB_DUMP_PATH="$TEMP_DIR/databases/$db.dump"
+  DB_DUMP_PATH="$TEMP_DIR/databases/$db_type/$db/data.dump"
   if [ ! -f "$DB_DUMP_PATH" ]; then
       log "${RED}Database dump not found: $DB_DUMP_PATH${NC}"
       log "${YELLOW}Skipping database $db import${NC}"
@@ -79,11 +119,11 @@ for db in "${DBS[@]}"; do
   fi
  
   # Check if database exists
-  if db_exists_on_dest "$db"; then
+  if db_exists_on_dest "$db" "$db_type"; then
     read -p "Database $db already exists on destination. Destroy and recreate? (y/n) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-      $DEST_SSH "dokku $DB_TYPE:destroy $db --force"
+      $DEST_SSH "dokku $db_type:destroy $db --force"
       log "Destroyed existing database $db on destination"
     else
       log "Skipping database $db import"
@@ -92,7 +132,7 @@ for db in "${DBS[@]}"; do
   fi
  
   # Create the database
-  $DEST_SSH "dokku $DB_TYPE:create $db"
+  $DEST_SSH "dokku $db_type:create $db"
   log "Created database $db on destination"
  
   # Upload the database dump
@@ -101,23 +141,37 @@ for db in "${DBS[@]}"; do
 
   # Import the data
   log "Importing database dump..."
-  $DEST_SSH "cat /tmp/$db.dump | dokku $DB_TYPE:import $db"
+  case "$db_type" in
+    postgres)
+      $DEST_SSH "cat /tmp/$db.dump | dokku postgres:import $db"
+      ;;
+    mongo)
+      $DEST_SSH "cat /tmp/$db.dump | dokku mongo:import $db"
+      ;;
+    redis)
+      $DEST_SSH "cat /tmp/$db.dump | dokku redis:import $db"
+      ;;
+  esac
 
   # Clean up
   $DEST_SSH "rm -f /tmp/$db.dump"
  
   # Verify the import
   log "Verifying database import for $db..."
-  $DEST_SSH "dokku $DB_TYPE:info $db"
+  $DEST_SSH "dokku $db_type:info $db"
  
-  # Get and save the DSN for later use (if available)
-  if $DEST_SSH "dokku $DB_TYPE:info $db --dsn > /dev/null 2>&1"; then
-    db_dsn=$($DEST_SSH "dokku $DB_TYPE:info $db --dsn")
-    echo "$db_dsn" > "$TEMP_DIR/databases/$db.dsn"
-    log "Saved database DSN for $db"
-  else
-    log "${YELLOW}DSN info not available for $db${NC}"
+  # Get and save the DSN for later use (if available for this database type)
+  if [[ "$db_type" == "postgres" || "$db_type" == "mongo" ]]; then
+    if $DEST_SSH "dokku $db_type:info $db --dsn > /dev/null 2>&1"; then
+      db_dsn=$($DEST_SSH "dokku $db_type:info $db --dsn")
+      echo "$db_dsn" > "$TEMP_DIR/databases/$db_type/$db/dsn.new"
+      log "Saved database DSN for $db"
+    else
+      log "${YELLOW}DSN info not available for $db${NC}"
+    fi
   fi
+  
+  log "${GREEN}✅ Completed import of $db_type database $db${NC}"
 done
 
 log "${GREEN}Database import completed successfully!${NC}"
