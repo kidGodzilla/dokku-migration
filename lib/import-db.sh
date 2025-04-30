@@ -29,32 +29,76 @@ if [ -z "$CONFIG_FILE" ]; then
 fi
 
 # Source the config file
+echo "Sourcing config file: $CONFIG_FILE"
 source "$CONFIG_FILE"
 
 # Source utility functions
 source "$(dirname "$0")/utils.sh"
 
+# Display raw array contents for debugging
+echo "DEBUG RAW ARRAYS:"
+echo "DBS array: ${DBS[@]}"
+echo "MONGO_DBS array: ${MONGO_DBS[@]}"
+echo "REDIS_DBS array: ${REDIS_DBS[@]}"
+
 # If MONGO_DBS isn't set, initialize it as an empty array
 if [ -z "${MONGO_DBS+x}" ]; then
+    echo "MONGO_DBS not set, initializing as empty array"
     MONGO_DBS=()
 fi
 
 # If REDIS_DBS isn't set, initialize it as an empty array
 if [ -z "${REDIS_DBS+x}" ]; then
+    echo "REDIS_DBS not set, initializing as empty array"
     REDIS_DBS=()
 fi
 
 # Create an array of all databases
 ALL_DBS=("${DBS[@]}" "${MONGO_DBS[@]}" "${REDIS_DBS[@]}")
 
+# Display array contents after initialization
+echo "DEBUG ARRAYS AFTER INITIALIZATION:"
+echo "DBS array: ${DBS[@]}"
+echo "MONGO_DBS array: ${MONGO_DBS[@]}"
+echo "REDIS_DBS array: ${REDIS_DBS[@]}"
+echo "ALL_DBS array: ${ALL_DBS[@]}"
+
 # Test SSH connections
 test_connections
 
+# More detailed output for DB lists
+echo "DEBUG DB ARRAYS IN DETAIL:"
+echo "Postgres DBs (${#DBS[@]} total):"
+for idx in "${!DBS[@]}"; do
+    echo "  $idx: ${DBS[$idx]}"
+done
+
+echo "MongoDB DBs (${#MONGO_DBS[@]} total):"
+for idx in "${!MONGO_DBS[@]}"; do
+    echo "  $idx: ${MONGO_DBS[$idx]}"
+done
+
+echo "Redis DBs (${#REDIS_DBS[@]} total):"
+for idx in "${!REDIS_DBS[@]}"; do
+    echo "  $idx: ${REDIS_DBS[$idx]}"
+done
+
 # Confirm before proceeding
 echo -e "${YELLOW}This script will import the following databases:${NC}"
-printf "Postgres DBs: %s\n" "${DBS[@]}"
-printf "MongoDB DBs: %s\n" "${MONGO_DBS[@]}"
-printf "Redis DBs: %s\n" "${REDIS_DBS[@]}"
+echo "Postgres DBs:"
+for db in "${DBS[@]}"; do
+    echo "  - $db"
+done
+
+echo "MongoDB DBs:"
+for db in "${MONGO_DBS[@]}"; do
+    echo "  - $db"
+done
+
+echo "Redis DBs:"
+for db in "${REDIS_DBS[@]}"; do
+    echo "  - $db"
+done
 echo -e "${YELLOW}To $DEST_SERVER_NAME ($DEST_SERVER_IP)${NC}"
 read -p "Do you want to continue? (y/n) " -n 1 -r
 echo
@@ -101,6 +145,13 @@ db_exists_on_dest() {
     return 1  # doesn't exist
   fi
 }
+
+# Debug database types
+log "Debug: Checking database types..."
+for db in "${ALL_DBS[@]}"; do
+  db_type=$(get_db_type "$db")
+  log "Database $db is of type $db_type"
+done
 
 # Import databases
 log "${GREEN}Importing databases to $DEST_SERVER_NAME...${NC}"
