@@ -90,12 +90,18 @@ for app in "${APPS[@]}"; do
         log "Exporting volume data for $app..."
         mkdir -p "$TEMP_DIR/volumes/$app"
         
-        # Extract volume paths from the output
+        # Process each volume
         while read -r line; do
-            if [[ "$line" =~ \/var\/lib\/dokku\/data\/storage\/(.*):\/(.*)\ \[(.*)\] ]]; then
+            # Skip header lines
+            if [[ "$line" == *"volume bind-mounts:"* ]]; then
+                continue
+            fi
+            
+            # Match the actual volume path format
+            if [[ "$line" =~ ^[[:space:]]*\/var\/lib\/dokku\/data\/storage\/([^:]+):\/([^[:space:]]+) ]]; then
                 host_path="${BASH_REMATCH[1]}"
                 container_path="${BASH_REMATCH[2]}"
-                volume_name=$(basename "$host_path")
+                volume_name="$host_path"
                 
                 log "Found volume: $volume_name"
                 log "Source path: /var/lib/dokku/data/storage/$host_path"
