@@ -25,6 +25,18 @@ if [ ! -f "/root/.dokku-migration-config" ]; then
 fi
 source "/root/.dokku-migration-config"
 
+# Validate and initialize APP_DB_MAP if needed
+if [ ${#APP_DB_MAP[@]} -eq 0 ]; then
+    log "WARNING: APP_DB_MAP is empty, creating default mapping"
+    declare -A APP_DB_MAP
+    for ((i=0; i<${#APPS[@]}; i++)); do
+        if [ $i -lt ${#DBS[@]} ]; then
+            APP_DB_MAP[${APPS[$i]}]=${DBS[$i]}
+            log "Mapped app ${APPS[$i]} to database ${DBS[$i]}"
+        fi
+    done
+fi
+
 # Confirm before proceeding
 echo -e "${YELLOW}This script will import the following apps:${NC}"
 printf "Apps: %s\n" "${APPS[@]}"
@@ -92,71 +104,6 @@ for app in "${APPS[@]}"; do
         log "Imported environment variables for $app"
     else
         log "WARNING: No environment file found for $app"
-    fi
-    
-    # Link the database using APP_DB_MAP
-    db_name=""
-    if [[ ${APP_DB_MAP["$app"]+_} ]]; then
-        db_name="${APP_DB_MAP["$app"]}"
-    fi
-
-    if [ -n "$db_name" ]; then
-        log "Linking database $db_name to app $app..."
-        
-        # Check if database exists before linking
-        if ! dokku postgres:exists "$db_name" &>/dev/null; then
-            log "ERROR: Database $db_name does not exist."
-            log "Please run the database import script first."
-            exit 1
-        fi
-        
-        # Unlink first in case it was previously linked
-        dokku postgres:unlink "$db_name" "$app" || true
-        
-        # Link the database
-        dokku postgres:link "$db_name" "$app"
-        log "Linked database $db_name to app $app"
-        
-        # Get the database DSN from saved file or directly
-        if [ -f "$TEMP_DIR/databases/$db_name.dsn" ]; then
-            db_dsn=$(cat "$TEMP_DIR/databases/$db_name.dsn")
-        else
-            db_dsn=$(dokku postgres:info "$db_name" --dsn)
-        fi
-        
-        # Set DATABASE_URL explicitly
-        dokku config:set "$app" "DATABASE_URL=$db_dsn"
-        log "Explicitly set DATABASE_URL for $app"
-        
-        # Verify DATABASE_URL is set correctly
-        has_db_url=$(dokku config:get "$app" DATABASE_URL || echo '')
-        if [ -z "$has_db_url" ]; then
-            log "ERROR: Failed to set DATABASE_URL for $app"
-        else
-            log "DATABASE_URL is properly set for $app"
-        fi
-        
-        # For Prisma applications, set the direct connection URL if needed
-        for prisma_app in "${PRISMA_APPS[@]}"; do
-            if [[ "$app" == "$prisma_app" ]]; then
-                # Extract host, port, user, password and database from DSN
-                if [[ "$db_dsn" =~ postgres://([^:]+):([^@]+)@([^:]+):([^/]+)/(.+) ]]; then
-                    db_user="${BASH_REMATCH[1]}"
-                    db_pass="${BASH_REMATCH[2]}"
-                    db_host="${BASH_REMATCH[3]}"
-                    db_port="${BASH_REMATCH[4]}"
-                    db_name="${BASH_REMATCH[5]}"
-                    
-                    # Set direct URL for Prisma
-                    direct_url="postgresql://${db_user}:${db_pass}@${db_host}:${db_port}/${db_name}?schema=public"
-                    dokku config:set "$app" "DIRECT_URL=$direct_url"
-                    log "Set DIRECT_URL for Prisma in $app"
-                fi
-                break
-            fi
-        done
-    else
-        log "No database mapping found for app $app"
     fi
     
     # Import volume configuration (if exists)
