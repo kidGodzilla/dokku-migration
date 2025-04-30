@@ -117,11 +117,13 @@ for app in "${APPS[@]}"; do
         for volume_app in "${VOLUME_DATA_APPS[@]}"; do
             if [[ "$app" == "$volume_app" ]]; then
                 needs_volume_transfer=true
+                log "App $app requires volume data transfer"
                 break
             fi
         done
         
         if [ "$needs_volume_transfer" = true ]; then
+            log "Processing volume data transfer for $app"
             while read -r line; do
                 if [[ "$line" =~ \/var\/lib\/dokku\/data\/storage\/(.*):\/(.*)\ \[(.*)\] ]]; then
                     host_path="${BASH_REMATCH[1]}"
@@ -129,11 +131,17 @@ for app in "${APPS[@]}"; do
                     permissions="${BASH_REMATCH[3]}"
                     volume_name=$(basename "$host_path")
                     
+                    log "Found volume: $volume_name"
+                    log "Source path: $TEMP_DIR/volumes/$app/$volume_name.tar.gz"
+                    
                     # Transfer and extract volume data
                     if [ -f "$TEMP_DIR/volumes/$app/$volume_name.tar.gz" ]; then
+                        log "Extracting volume data for $volume_name"
                         mkdir -p "/var/lib/dokku/data/storage/$host_path"
                         tar -xzf "$TEMP_DIR/volumes/$app/$volume_name.tar.gz" -C "/var/lib/dokku/data/storage/"
                         log "Imported volume data for $volume_name"
+                    else
+                        log "WARNING: Volume data file not found: $TEMP_DIR/volumes/$app/$volume_name.tar.gz"
                     fi
                     
                     # Mount the volume
@@ -142,6 +150,7 @@ for app in "${APPS[@]}"; do
                 fi
             done < "$TEMP_DIR/apps/$app/volumes"
         else
+            log "No volume data transfer required for $app"
             # For other apps, just recreate the mounts without data transfer
             while read -r line; do
                 if [[ "$line" =~ \/var\/lib\/dokku\/data\/storage\/(.*):\/(.*)\ \[(.*)\] ]]; then
@@ -225,12 +234,12 @@ for app in "${APPS[@]}"; do
             # Process the scale information once we're in the right section
             if [ "$process_section" = true ] && [[ "$line" =~ ([a-zA-Z0-9_\-]+):\ +([0-9]+) ]]; then
                 process="${BASH_REMATCH[1]}"
-                # Validate that count is a valid number
-                if [[ "${BASH_REMATCH[2]}" =~ ^[0-9]+$ ]]; then
-                    count="${BASH_REMATCH[2]}"
+                count="${BASH_REMATCH[2]}"
+                # Only add to process_scales if count is a valid positive number
+                if [[ "$count" =~ ^[0-9]+$ ]] && [ "$count" -gt 0 ]; then
                     process_scales["$process"]=$count
                 else
-                    log "WARNING: Invalid process count '${BASH_REMATCH[2]}' for process '$process'"
+                    log "WARNING: Invalid process count '$count' for process '$process'"
                 fi
             fi
         done < "$TEMP_DIR/apps/$app/scale"
@@ -239,9 +248,7 @@ for app in "${APPS[@]}"; do
         scale_cmd=""
         for process in "${!process_scales[@]}"; do
             count="${process_scales[$process]}"
-            if [ "$count" -gt 0 ]; then
-                scale_cmd+="$process=$count "
-            fi
+            scale_cmd+="$process=$count "
         done
         
         # Apply the scaling if we have any processes to scale
