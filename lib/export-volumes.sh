@@ -45,9 +45,6 @@ if ! ssh -i "$SOURCE_SERVER_KEY" -p "$SOURCE_SERVER_PORT" root@"$SOURCE_SERVER_I
     exit 1
 fi
 
-# Test SSH connections
-test_connections
-
 # Confirm before proceeding
 echo -e "${YELLOW}This script will export volume data for the following apps:${NC}"
 printf "Apps: %s\n" "${VOLUME_DATA_APPS[@]}"
@@ -66,14 +63,14 @@ mkdir -p "$TEMP_DIR/volumes"
 for app in "${VOLUME_DATA_APPS[@]}"; do
     log "Processing volume data for $app..."
     
-    # Check if app exists on source server
-    if ! $SOURCE_SSH "dokku apps:exists $app" &>/dev/null; then
+    # Check if app exists on source server using direct SSH command
+    if ! ssh -i "$SOURCE_SERVER_KEY" -p "$SOURCE_SERVER_PORT" root@"$SOURCE_SERVER_IP" "dokku apps:exists $app" &>/dev/null; then
         log "${RED}App $app does not exist on source server${NC}"
         continue
     fi
     
-    # Get volume configuration
-    volumes=$($SOURCE_SSH "dokku storage:list $app 2>/dev/null || echo 'No volumes'")
+    # Get volume configuration using direct SSH command
+    volumes=$(ssh -i "$SOURCE_SERVER_KEY" -p "$SOURCE_SERVER_PORT" root@"$SOURCE_SERVER_IP" "dokku storage:list $app 2>/dev/null || echo 'No volumes'")
     if [[ "$volumes" == "No volumes" ]]; then
         log "${YELLOW}No volumes found for app $app${NC}"
         continue
@@ -86,39 +83,58 @@ for app in "${VOLUME_DATA_APPS[@]}"; do
     # Create app volumes directory
     mkdir -p "$TEMP_DIR/volumes/$app"
     
+    # Debug: Print the volumes content
+    echo "Debug: Volumes content for $app:"
+    echo "$volumes"
+    
     # Process each volume
     while read -r line; do
-        if [[ "$line" =~ \/var\/lib\/dokku\/data\/storage\/(.*):\/(.*)\ \[(.*)\] ]]; then
+        # Skip header lines
+        if [[ "$line" == *"volume bind-mounts:"* ]]; then
+            continue
+        fi
+        
+        # Match the actual volume path format
+        if [[ "$line" =~ ^[[:space:]]*\/var\/lib\/dokku\/data\/storage\/([^:]+):\/([^[:space:]]+) ]]; then
             host_path="${BASH_REMATCH[1]}"
             container_path="${BASH_REMATCH[2]}"
-            volume_name=$(basename "$host_path")
+            volume_name="$host_path"
             
             log "Found volume: $volume_name"
             log "Source path: /var/lib/dokku/data/storage/$host_path"
             
-            # Check if volume directory exists on source
-            if ! $SOURCE_SSH "[ -d \"/var/lib/dokku/data/storage/$host_path\" ]"; then
+            # Check if volume directory exists on source using direct SSH command
+            if ! ssh -i "$SOURCE_SERVER_KEY" -p "$SOURCE_SERVER_PORT" root@"$SOURCE_SERVER_IP" "[ -d \"/var/lib/dokku/data/storage/$host_path\" ]"; then
                 log "${RED}Volume directory not found on source: /var/lib/dokku/data/storage/$host_path${NC}"
                 continue
             fi
             
-            # Create tar of the volume
+            # Create tar of the volume using direct SSH command
             log "Creating tar archive for volume $volume_name..."
-            if $SOURCE_SSH "cd /var/lib/dokku/data/storage && tar -czf /tmp/$volume_name.tar.gz $host_path"; then
+            if ssh -i "$SOURCE_SERVER_KEY" -p "$SOURCE_SERVER_PORT" root@"$SOURCE_SERVER_IP" "cd /var/lib/dokku/data/storage && tar -czf /tmp/$volume_name.tar.gz $host_path"; then
                 log "Successfully created tar archive for volume $volume_name"
                 
-                # Download the tar archive
+                # Download the tar archive using direct SCP command
                 log "Downloading volume archive..."
-                if $SOURCE_SCP "root@$SOURCE_SERVER_IP:/tmp/$volume_name.tar.gz" "$TEMP_DIR/volumes/$app/"; then
+                if scp -i "$SOURCE_SERVER_KEY" -P "$SOURCE_SERVER_PORT" "root@$SOURCE_SERVER_IP:/tmp/$volume_name.tar.gz" "$TEMP_DIR/volumes/$app/"; then
                     log "Successfully downloaded volume archive for $volume_name"
-                    $SOURCE_SSH "rm /tmp/$volume_name.tar.gz"
+                    ssh -i "$SOURCE_SERVER_KEY" -p "$SOURCE_SERVER_PORT" root@"$SOURCE_SERVER_IP" "rm /tmp/$volume_name.tar.gz"
                     log "Exported volume $volume_name for $app"
+                    
+                    # Verify the file was downloaded
+                    if [ -f "$TEMP_DIR/volumes/$app/$volume_name.tar.gz" ]; then
+                        log "Verified downloaded file: $TEMP_DIR/volumes/$app/$volume_name.tar.gz"
+                    else
+                        log "${RED}Failed to verify downloaded file: $TEMP_DIR/volumes/$app/$volume_name.tar.gz${NC}"
+                    fi
                 else
                     log "${RED}Failed to download volume archive for $volume_name${NC}"
                 fi
             else
                 log "${RED}Failed to create tar archive for volume $volume_name${NC}"
             fi
+        else
+            log "Debug: Line did not match volume pattern: $line"
         fi
     done < <(echo "$volumes")
     
