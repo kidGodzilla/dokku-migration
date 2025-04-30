@@ -161,8 +161,9 @@ for app in "${APPS[@]}"; do
     # Set up domains
     if [ -f "$TEMP_DIR/apps/$app/domains" ]; then
         # Read domains and split by space
-        domains=$(grep "Domains app vhosts:" "$TEMP_DIR/apps/$app/domains" | sed 's/Domains app vhosts://' | tr -d ' ')
-        IFS=' ' read -ra DOMAIN_LIST <<< "$domains"
+        domains=$(grep "Domains app vhosts:" "$TEMP_DIR/apps/$app/domains" | sed 's/Domains app vhosts://')
+        # Split into array, preserving spaces between domains
+        read -ra DOMAIN_LIST <<< "$domains"
         
         # Clear existing domains including the default domain
         dokku domains:clear "$app"
