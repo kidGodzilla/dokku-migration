@@ -134,14 +134,9 @@ fi
 get_db_type() {
   local db="$1"
   
-  # DEBUG: Show what we're checking
-  echo "DEBUG: Checking type for db=$db"
-  
   # Check if db is in MONGO_DBS
   for mongo_db in "${MONGO_DBS[@]}"; do
-    echo "  Comparing with mongo_db=$mongo_db"
     if [[ "$db" == "$mongo_db" ]]; then
-      echo "  MATCH FOUND in MONGO_DBS!"
       echo "mongo"
       return
     fi
@@ -149,27 +144,15 @@ get_db_type() {
   
   # Check if db is in REDIS_DBS
   for redis_db in "${REDIS_DBS[@]}"; do
-    echo "  Comparing with redis_db=$redis_db"
     if [[ "$db" == "$redis_db" ]]; then
-      echo "  MATCH FOUND in REDIS_DBS!"
       echo "redis"
       return
     fi
   done
   
   # Default to postgres
-  echo "  No match in special arrays, defaulting to postgres"
   echo "postgres"
 }
-
-# DEBUG: Test get_db_type function for each database
-echo "===== TESTING TYPE DETECTION ====="
-for db in "${ALL_DBS[@]}"; do
-    echo "Testing type detection for $db:"
-    db_type=$(get_db_type "$db")
-    echo "Result: $db is a $db_type database"
-    echo ""
-done
 
 # Check if database exists on destination
 db_exists_on_dest() {
@@ -185,13 +168,6 @@ db_exists_on_dest() {
     return 1  # doesn't exist
   fi
 }
-
-# Debug database types
-log "Debug: Checking database types..."
-for db in "${ALL_DBS[@]}"; do
-  db_type=$(get_db_type "$db")
-  log "Database $db is of type $db_type"
-done
 
 # Import databases
 log "${GREEN}Importing databases to $DEST_SERVER_NAME...${NC}"
