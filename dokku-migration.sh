@@ -262,6 +262,10 @@ DEST_SCP="$DEST_SCP"
 APPS=(${APPS[@]@Q})
 DBS=(${DBS[@]@Q})
 
+# Define MongoDB and Redis databases if they exist
+MONGO_DBS=(${MONGO_DBS[@]@Q})
+REDIS_DBS=(${REDIS_DBS[@]@Q})
+
 # Let's Encrypt configuration
 LETSENCRYPT_EMAIL="$LETSENCRYPT_EMAIL"
 
