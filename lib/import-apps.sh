@@ -111,37 +111,62 @@ for app in "${APPS[@]}"; do
   if [ -n "$db_name" ]; then
     log "Linking database $db_name to app $app..."
     
+    # Get the database type
+    db_type="postgres"  # Default to postgres
+    
+    # Check if it's in MONGO_DBS
+    for mongo_db in "${MONGO_DBS[@]}"; do
+      if [[ "$db_name" == "$mongo_db" ]]; then
+        db_type="mongo"
+        break
+      fi
+    done
+    
+    # Check if it's in REDIS_DBS
+    for redis_db in "${REDIS_DBS[@]}"; do
+      if [[ "$db_name" == "$redis_db" ]]; then
+        db_type="redis"
+        break
+      fi
+    done
+    
     # Check if database exists before linking
-    if ! db_exists_on_dest "$db_name"; then
+    if ! $DEST_SSH "dokku $db_type:exists $db_name" &>/dev/null; then
       log "ERROR: Database $db_name does not exist on destination."
       log "Please run the database import script first."
       exit 1
     fi
     
     # Unlink first in case it was previously linked
-    $DEST_SSH "dokku postgres:unlink $db_name $app" || true
+    $DEST_SSH "dokku $db_type:unlink $db_name $app" || true
     
     # Link the database
-    $DEST_SSH "dokku postgres:link $db_name $app"
+    $DEST_SSH "dokku $db_type:link $db_name $app"
     log "Linked database $db_name to app $app"
     
     # Get the database DSN from saved file or directly
-    if [ -f "$TEMP_DIR/databases/$db_name.dsn" ]; then
-      db_dsn=$(cat "$TEMP_DIR/databases/$db_name.dsn")
+    if [ -f "$TEMP_DIR/databases/$db_type/$db_name/dsn.new" ]; then
+      db_dsn=$(cat "$TEMP_DIR/databases/$db_type/$db_name/dsn.new")
+    elif [ -f "$TEMP_DIR/databases/$db_type/$db_name/dsn" ]; then
+      db_dsn=$(cat "$TEMP_DIR/databases/$db_type/$db_name/dsn")
     else
-      db_dsn=$($DEST_SSH "dokku postgres:info $db_name --dsn")
+      db_dsn=$($DEST_SSH "dokku $db_type:info $db_name --dsn" || echo "")
     fi
     
-    # Set DATABASE_URL explicitly
-    $DEST_SSH "dokku config:set $app DATABASE_URL='$db_dsn'"
-    log "Explicitly set DATABASE_URL for $app"
-    
-    # Verify DATABASE_URL is set correctly
-    has_db_url=$($DEST_SSH "dokku config:get $app DATABASE_URL || echo ''")
-    if [ -z "$has_db_url" ]; then
-      log "ERROR: Failed to set DATABASE_URL for $app"
+    # Set DATABASE_URL explicitly if we have a DSN
+    if [ -n "$db_dsn" ]; then
+      $DEST_SSH "dokku config:set $app DATABASE_URL='$db_dsn'"
+      log "Explicitly set DATABASE_URL for $app"
+      
+      # Verify DATABASE_URL is set correctly
+      has_db_url=$($DEST_SSH "dokku config:get $app DATABASE_URL || echo ''")
+      if [ -z "$has_db_url" ]; then
+        log "ERROR: Failed to set DATABASE_URL for $app"
+      else
+        log "DATABASE_URL is properly set for $app"
+      fi
     else
-      log "DATABASE_URL is properly set for $app"
+      log "WARNING: Could not get DSN for database $db_name"
     fi
     
     # For Prisma applications, set the direct connection URL if needed
@@ -182,35 +207,32 @@ for app in "${APPS[@]}"; do
     
     if [ "$needs_volume_transfer" = true ]; then
       while read -r line; do
-        if [[ "$line" =~ \/var\/lib\/dokku\/data\/storage\/(.*):\/(.*)\ \[(.*)\] ]]; then
+        if [[ "$line" =~ ^[[:space:]]*\/var\/lib\/dokku\/data\/storage\/([^:]+):\/([^[:space:]]+) ]]; then
           host_path="${BASH_REMATCH[1]}"
           container_path="${BASH_REMATCH[2]}"
-          permissions="${BASH_REMATCH[3]}"
-          volume_name=$(basename "$host_path")
           
           # Transfer and extract volume data
-          if [ -f "$TEMP_DIR/volumes/$app/$volume_name.tar.gz" ]; then
-            $DEST_SCP "$TEMP_DIR/volumes/$app/$volume_name.tar.gz" "root@$DEST_SERVER_IP:/tmp/"
-            $DEST_SSH "mkdir -p /var/lib/dokku/data/storage/$host_path && tar -xzf /tmp/$volume_name.tar.gz -C /var/lib/dokku/data/storage/ && rm /tmp/$volume_name.tar.gz"
-            log "Imported volume data for $volume_name"
+          if [ -f "$TEMP_DIR/volumes/$app/$host_path.tar.gz" ]; then
+            $DEST_SCP "$TEMP_DIR/volumes/$app/$host_path.tar.gz" "root@$DEST_SERVER_IP:/tmp/"
+            $DEST_SSH "mkdir -p /var/lib/dokku/data/storage/$host_path && tar -xzf /tmp/$host_path.tar.gz -C /var/lib/dokku/data/storage/ && rm /tmp/$host_path.tar.gz"
+            log "Imported volume data for $host_path"
           fi
           
           # Mount the volume
-          $DEST_SSH "dokku storage:mount $app /var/lib/dokku/data/storage/$host_path:$container_path:$permissions"
-          log "Mounted volume $volume_name for $app"
+          $DEST_SSH "dokku storage:mount $app /var/lib/dokku/data/storage/$host_path:/$container_path"
+          log "Mounted volume $host_path for $app"
         fi
       done < "$TEMP_DIR/apps/$app/volumes"
     else
       # For other apps, just recreate the mounts without data transfer
       while read -r line; do
-        if [[ "$line" =~ \/var\/lib\/dokku\/data\/storage\/(.*):\/(.*)\ \[(.*)\] ]]; then
+        if [[ "$line" =~ ^[[:space:]]*\/var\/lib\/dokku\/data\/storage\/([^:]+):\/([^[:space:]]+) ]]; then
           host_path="${BASH_REMATCH[1]}"
           container_path="${BASH_REMATCH[2]}"
-          permissions="${BASH_REMATCH[3]}"
           
           # Create directory and mount
           $DEST_SSH "mkdir -p /var/lib/dokku/data/storage/$host_path"
-          $DEST_SSH "dokku storage:mount $app /var/lib/dokku/data/storage/$host_path:$container_path:$permissions"
+          $DEST_SSH "dokku storage:mount $app /var/lib/dokku/data/storage/$host_path:/$container_path"
           log "Mounted volume $host_path for $app"
         fi
       done < "$TEMP_DIR/apps/$app/volumes"
