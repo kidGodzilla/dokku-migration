@@ -86,7 +86,7 @@ for app in "${APPS[@]}"; do
             if [[ -n "$line" && "$line" != "#"* ]]; then
                 # Remove 'export' keyword if present
                 key_value="${line#export }"
-                dokku config:set "$app" "$key_value"
+                dokku config:set "$app" "$key_value" --no-restart
             fi
         done < "$TEMP_DIR/apps/$app/env"
         log "Imported environment variables for $app"
@@ -96,8 +96,8 @@ for app in "${APPS[@]}"; do
     
     # Link the database using APP_DB_MAP
     db_name=""
-    if [ -n "${APP_DB_MAP[$app]}" ]; then
-        db_name="${APP_DB_MAP[$app]}"
+    if [[ ${APP_DB_MAP["$app"]+_} ]]; then
+        db_name="${APP_DB_MAP["$app"]}"
     fi
 
     if [ -n "$db_name" ]; then
@@ -307,6 +307,10 @@ for app in "${APPS[@]}"; do
     else
         log "No process scaling information found for $app"
     fi
+
+    # After all config changes, restart the app once
+    dokku ps:restart "$app"
+    log "Restarted app $app after all configuration changes"
 done
 
 log "${GREEN}App import completed successfully!${NC}"
