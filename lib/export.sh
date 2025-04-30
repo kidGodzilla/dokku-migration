@@ -79,34 +79,47 @@ for app in "${APPS[@]}"; do
     # Check if this app needs volume data transfer
     needs_volume_transfer=false
     for volume_app in "${VOLUME_DATA_APPS[@]}"; do
-      if [[ "$app" == "$volume_app" ]]; then
-        needs_volume_transfer=true
-        break
-      fi
+        if [[ "$app" == "$volume_app" ]]; then
+            needs_volume_transfer=true
+            log "App $app requires volume data transfer"
+            break
+        fi
     done
     
     if [ "$needs_volume_transfer" = true ]; then
-      log "Exporting volume data for $app..."
-      mkdir -p "$TEMP_DIR/volumes/$app"
-      
-      # Extract volume paths from the output
-      while read -r line; do
-        if [[ "$line" =~ \/var\/lib\/dokku\/data\/storage\/(.*):\/(.*)\ \[(.*)\] ]]; then
-          host_path="${BASH_REMATCH[1]}"
-          container_path="${BASH_REMATCH[2]}"
-          volume_name=$(basename "$host_path")
-          
-          # Create tar of the volume
-          log "Creating tar archive for volume $volume_name..."
-          $SOURCE_SSH "cd /var/lib/dokku/data/storage && tar -czf /tmp/$volume_name.tar.gz $host_path" || log "${YELLOW}Failed to create tar archive for volume $volume_name${NC}"
-          
-          log "Downloading volume archive..."
-          $SOURCE_SCP "root@$SOURCE_SERVER_IP:/tmp/$volume_name.tar.gz" "$TEMP_DIR/volumes/$app/"
-          $SOURCE_SSH "rm /tmp/$volume_name.tar.gz"
-          
-          log "Exported volume $volume_name for $app"
-        fi
-      done < "$TEMP_DIR/apps/$app/volumes"
+        log "Exporting volume data for $app..."
+        mkdir -p "$TEMP_DIR/volumes/$app"
+        
+        # Extract volume paths from the output
+        while read -r line; do
+            if [[ "$line" =~ \/var\/lib\/dokku\/data\/storage\/(.*):\/(.*)\ \[(.*)\] ]]; then
+                host_path="${BASH_REMATCH[1]}"
+                container_path="${BASH_REMATCH[2]}"
+                volume_name=$(basename "$host_path")
+                
+                log "Found volume: $volume_name"
+                log "Source path: /var/lib/dokku/data/storage/$host_path"
+                
+                # Create tar of the volume
+                log "Creating tar archive for volume $volume_name..."
+                if $SOURCE_SSH "cd /var/lib/dokku/data/storage && tar -czf /tmp/$volume_name.tar.gz $host_path"; then
+                    log "Successfully created tar archive for volume $volume_name"
+                    
+                    log "Downloading volume archive..."
+                    if $SOURCE_SCP "root@$SOURCE_SERVER_IP:/tmp/$volume_name.tar.gz" "$TEMP_DIR/volumes/$app/"; then
+                        log "Successfully downloaded volume archive for $volume_name"
+                        $SOURCE_SSH "rm /tmp/$volume_name.tar.gz"
+                        log "Exported volume $volume_name for $app"
+                    else
+                        log "${RED}Failed to download volume archive for $volume_name${NC}"
+                    fi
+                else
+                    log "${RED}Failed to create tar archive for volume $volume_name${NC}"
+                fi
+            fi
+        done < "$TEMP_DIR/apps/$app/volumes"
+    else
+        log "No volume data transfer required for $app"
     fi
   fi
   
