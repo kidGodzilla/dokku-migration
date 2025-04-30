@@ -36,10 +36,25 @@ source "$(dirname "$0")/utils.sh"
 # Test SSH connections
 test_connections
 
+# If MONGO_DBS isn't set, initialize it as an empty array
+if [ -z "${MONGO_DBS+x}" ]; then
+    MONGO_DBS=()
+fi
+
+# If REDIS_DBS isn't set, initialize it as an empty array
+if [ -z "${REDIS_DBS+x}" ]; then
+    REDIS_DBS=()
+fi
+
+# Create an array of all databases
+ALL_DBS=("${DBS[@]}" "${MONGO_DBS[@]}" "${REDIS_DBS[@]}")
+
 # Confirm before proceeding
 echo -e "${YELLOW}This script will export the following apps and databases:${NC}"
 printf "Apps: %s\n" "${APPS[@]}"
-printf "Databases: %s\n" "${DBS[@]}"
+printf "Postgres DBs: %s\n" "${DBS[@]}"
+printf "MongoDB DBs: %s\n" "${MONGO_DBS[@]}"
+printf "Redis DBs: %s\n" "${REDIS_DBS[@]}"
 echo -e "${YELLOW}From $SOURCE_SERVER_NAME ($SOURCE_SERVER_IP)${NC}"
 read -p "Do you want to continue? (y/n) " -n 1 -r
 echo
@@ -53,6 +68,30 @@ mkdir -p "$TEMP_DIR/apps"
 mkdir -p "$TEMP_DIR/databases"
 mkdir -p "$TEMP_DIR/volumes"
 mkdir -p "$TEMP_DIR/logs"
+
+# Helper function to get database type
+get_db_type() {
+  local db="$1"
+  
+  # Check if db is in MONGO_DBS
+  for mongo_db in "${MONGO_DBS[@]}"; do
+    if [[ "$db" == "$mongo_db" ]]; then
+      echo "mongo"
+      return
+    fi
+  done
+  
+  # Check if db is in REDIS_DBS
+  for redis_db in "${REDIS_DBS[@]}"; do
+    if [[ "$db" == "$redis_db" ]]; then
+      echo "redis"
+      return
+    fi
+  done
+  
+  # Default to postgres
+  echo "postgres"
+}
 
 # Step 1: Export app configurations
 log "${GREEN}Step 1: Exporting app configurations from $SOURCE_SERVER_NAME...${NC}"
@@ -169,11 +208,17 @@ done
 
 # Step 2: Export databases
 log "${GREEN}Step 2: Exporting databases from $SOURCE_SERVER_NAME...${NC}"
-for db in "${DBS[@]}"; do
-  log "Exporting database $db..."
+for db in "${ALL_DBS[@]}"; do
+  # Get the database type for this database
+  db_type=$(get_db_type "$db")
   
-  # Check database type (default to postgres)
-  db_type="${DB_TYPE:-postgres}"
+  log "Exporting $db_type database: $db..."
+  
+  # Create a directory for this database
+  mkdir -p "$TEMP_DIR/databases/$db_type/$db"
+  
+  # Save the database type
+  echo "$db_type" > "$TEMP_DIR/databases/$db_type/$db/type"
   
   # Check if database exists
   if ! $SOURCE_SSH "dokku $db_type:exists $db" &>/dev/null; then
@@ -182,24 +227,54 @@ for db in "${DBS[@]}"; do
   fi
   
   # Export database
-  log "Creating database dump..."
-  $SOURCE_SSH "dokku $db_type:export $db" > "$TEMP_DIR/databases/$db.dump" || log "${RED}Failed to export database $db${NC}"
+  log "Creating database dump for $db_type database $db..."
   
-  # Check if dump was successful
-  if [ ! -s "$TEMP_DIR/databases/$db.dump" ]; then
-    log "${RED}Database dump for $db is empty or failed${NC}"
-    continue
-  fi
+  case "$db_type" in
+    postgres)
+      # PostgreSQL dump
+      $SOURCE_SSH "dokku postgres:export $db" > "$TEMP_DIR/databases/$db_type/$db/data.dump" || log "${RED}Failed to export postgres database $db${NC}"
+      
+      # Check if dump was successful
+      if [ ! -s "$TEMP_DIR/databases/$db_type/$db/data.dump" ]; then
+        log "${RED}Database dump for $db is empty or failed${NC}"
+        continue
+      fi
+      ;;
+      
+    mongo)
+      # MongoDB dump
+      $SOURCE_SSH "dokku mongo:export $db" > "$TEMP_DIR/databases/$db_type/$db/data.dump" || log "${RED}Failed to export mongo database $db${NC}"
+      
+      # Check if dump was successful
+      if [ ! -s "$TEMP_DIR/databases/$db_type/$db/data.dump" ]; then
+        log "${RED}MongoDB dump for $db is empty or failed${NC}"
+        continue
+      fi
+      ;;
+      
+    redis)
+      # Redis dump
+      $SOURCE_SSH "dokku redis:export $db" > "$TEMP_DIR/databases/$db_type/$db/data.dump" || log "${RED}Failed to export redis database $db${NC}"
+      
+      # Check if dump was successful
+      if [ ! -s "$TEMP_DIR/databases/$db_type/$db/data.dump" ]; then
+        log "${RED}Redis dump for $db is empty or failed${NC}"
+        continue
+      fi
+      ;;
+  esac
   
   # Get database info
-  $SOURCE_SSH "dokku $db_type:info $db" > "$TEMP_DIR/databases/$db.info" 2>/dev/null || log "${YELLOW}Failed to get database info for $db${NC}"
+  $SOURCE_SSH "dokku $db_type:info $db" > "$TEMP_DIR/databases/$db_type/$db/info" 2>/dev/null || log "${YELLOW}Failed to get database info for $db${NC}"
   
-  # Try to get DSN
-  if $SOURCE_SSH "dokku $db_type:info $db --dsn" &>/dev/null; then
-    $SOURCE_SSH "dokku $db_type:info $db --dsn" > "$TEMP_DIR/databases/$db.dsn" || log "${YELLOW}Failed to get database DSN for $db${NC}"
+  # Try to get DSN if applicable
+  if [[ "$db_type" == "postgres" || "$db_type" == "mongo" ]]; then
+    if $SOURCE_SSH "dokku $db_type:info $db --dsn" &>/dev/null; then
+      $SOURCE_SSH "dokku $db_type:info $db --dsn" > "$TEMP_DIR/databases/$db_type/$db/dsn" || log "${YELLOW}Failed to get database DSN for $db${NC}"
+    fi
   fi
   
-  log "${GREEN}✅ Completed export of database $db${NC}"
+  log "${GREEN}✅ Completed export of $db_type database $db${NC}"
 done
 
 # Create manifest file
