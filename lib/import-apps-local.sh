@@ -108,6 +108,44 @@ for app in "${APPS[@]}"; do
         log "WARNING: No environment file found for $app"
     fi
     
+    # Link database if needed
+    if [ -n "${APP_DB_MAP[$app]}" ]; then
+        db_name="${APP_DB_MAP[$app]}"
+        log "Linking database $db_name to app $app..."
+        
+        # Get the database type
+        db_type="postgres"  # Default to postgres
+        
+        # Check if it's in MONGO_DBS
+        for mongo_db in "${MONGO_DBS[@]}"; do
+          if [[ "$db_name" == "$mongo_db" ]]; then
+            db_type="mongo"
+            break
+          fi
+        done
+        
+        # Check if it's in REDIS_DBS
+        for redis_db in "${REDIS_DBS[@]}"; do
+          if [[ "$db_name" == "$redis_db" ]]; then
+            db_type="redis"
+            break
+          fi
+        done
+        
+        # Check if database exists before linking
+        if ! dokku "$db_type:exists" "$db_name" &>/dev/null; then
+            log "${RED}Database $db_name does not exist${NC}"
+            log "${YELLOW}Please run the database import first${NC}"
+        else
+            # Unlink first in case it was previously linked
+            dokku "$db_type:unlink" "$db_name" "$app" || true
+            
+            # Link the database
+            dokku "$db_type:link" "$db_name" "$app"
+            log "Linked database $db_name to app $app"
+        fi
+    fi
+    
     # Import volume configuration (if exists)
     if [ -f "$TEMP_DIR/apps/$app/volumes" ]; then
         log "Importing volume configuration for $app..."
@@ -125,42 +163,39 @@ for app in "${APPS[@]}"; do
         if [ "$needs_volume_transfer" = true ]; then
             log "Processing volume data transfer for $app"
             while read -r line; do
-                if [[ "$line" =~ \/var\/lib\/dokku\/data\/storage\/(.*):\/(.*)\ \[(.*)\] ]]; then
+                if [[ "$line" =~ ^[[:space:]]*\/var\/lib\/dokku\/data\/storage\/([^:]+):\/([^[:space:]]+) ]]; then
                     host_path="${BASH_REMATCH[1]}"
                     container_path="${BASH_REMATCH[2]}"
-                    permissions="${BASH_REMATCH[3]}"
-                    volume_name=$(basename "$host_path")
                     
-                    log "Found volume: $volume_name"
-                    log "Source path: $TEMP_DIR/volumes/$app/$volume_name.tar.gz"
+                    log "Found volume: $host_path"
+                    log "Source path: $TEMP_DIR/volumes/$app/$host_path.tar.gz"
                     
                     # Transfer and extract volume data
-                    if [ -f "$TEMP_DIR/volumes/$app/$volume_name.tar.gz" ]; then
-                        log "Extracting volume data for $volume_name"
+                    if [ -f "$TEMP_DIR/volumes/$app/$host_path.tar.gz" ]; then
+                        log "Extracting volume data for $host_path"
                         mkdir -p "/var/lib/dokku/data/storage/$host_path"
-                        tar -xzf "$TEMP_DIR/volumes/$app/$volume_name.tar.gz" -C "/var/lib/dokku/data/storage/"
-                        log "Imported volume data for $volume_name"
+                        tar -xzf "$TEMP_DIR/volumes/$app/$host_path.tar.gz" -C "/var/lib/dokku/data/storage/"
+                        log "Imported volume data for $host_path"
                     else
-                        log "WARNING: Volume data file not found: $TEMP_DIR/volumes/$app/$volume_name.tar.gz"
+                        log "WARNING: Volume data file not found: $TEMP_DIR/volumes/$app/$host_path.tar.gz"
                     fi
                     
                     # Mount the volume
-                    dokku storage:mount "$app" "/var/lib/dokku/data/storage/$host_path:$container_path:$permissions"
-                    log "Mounted volume $volume_name for $app"
+                    dokku storage:mount "$app" "/var/lib/dokku/data/storage/$host_path:/$container_path"
+                    log "Mounted volume $host_path for $app"
                 fi
             done < "$TEMP_DIR/apps/$app/volumes"
         else
             log "No volume data transfer required for $app"
             # For other apps, just recreate the mounts without data transfer
             while read -r line; do
-                if [[ "$line" =~ \/var\/lib\/dokku\/data\/storage\/(.*):\/(.*)\ \[(.*)\] ]]; then
+                if [[ "$line" =~ ^[[:space:]]*\/var\/lib\/dokku\/data\/storage\/([^:]+):\/([^[:space:]]+) ]]; then
                     host_path="${BASH_REMATCH[1]}"
                     container_path="${BASH_REMATCH[2]}"
-                    permissions="${BASH_REMATCH[3]}"
                     
                     # Create directory and mount
                     mkdir -p "/var/lib/dokku/data/storage/$host_path"
-                    dokku storage:mount "$app" "/var/lib/dokku/data/storage/$host_path:$container_path:$permissions"
+                    dokku storage:mount "$app" "/var/lib/dokku/data/storage/$host_path:/$container_path"
                     log "Mounted volume $host_path for $app"
                 fi
             done < "$TEMP_DIR/apps/$app/volumes"
@@ -194,19 +229,19 @@ for app in "${APPS[@]}"; do
         log "Verified domain configuration for $app"
     fi
     
-    # Set up Let's Encrypt with email
-    # dokku letsencrypt:set "$app" email "$LETSENCRYPT_EMAIL"
-    # log "Set Let's Encrypt email for $app"
-    # dokku letsencrypt:enable "$app" || true
-    # log "Attempted to enable Let's Encrypt for $app"
-
-# +    # Only set up Let's Encrypt if this app is in the LETSENCRYPT_APPS array
-# +    if [[ " ${LETSENCRYPT_APPS[@]} " =~ " ${app} " ]]; then
-# +        dokku letsencrypt:set "$app" email "$LETSENCRYPT_EMAIL"
-# +        log "Set Let's Encrypt email for $app"
-# +        dokku letsencrypt:enable "$app" || true
-# +        log "Enabled Let's Encrypt for $app"
-# +    fi
+#    # Set up Let's Encrypt with email
+#    dokku letsencrypt:set "$app" email "$LETSENCRYPT_EMAIL"
+#    log "Set Let's Encrypt email for $app"
+#    dokku letsencrypt:enable "$app" || true
+#    log "Attempted to enable Let's Encrypt for $app"
+#
+#    # Only set up Let's Encrypt if this app is in the LETSENCRYPT_APPS array
+#    if [[ " ${LETSENCRYPT_APPS[@]} " =~ " ${app} " ]]; then
+#        dokku letsencrypt:set "$app" email "$LETSENCRYPT_EMAIL"
+#        log "Set Let's Encrypt email for $app"
+#        dokku letsencrypt:enable "$app" || true
+#        log "Enabled Let's Encrypt for $app"
+#    fi
     
     # Deploy the app
     dokku ps:rebuild "$app" || true
