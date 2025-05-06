@@ -77,7 +77,7 @@ else
         mkdir -p "${INSTALL_DIR}"
     fi
     echo -e "${YELLOW}Cloning repository...${NC}"
-    git clone -b "${BRANCH}" https://github.com/pedropaf/dokku-migration.git "${INSTALL_DIR}"
+    git clone -b "${BRANCH}" https://github.com/kidGodzilla/dokku-migration.git "${INSTALL_DIR}"
 fi
 
 # Make scripts executable
@@ -224,6 +224,6 @@ echo -e "\nInstalled version: ${BLUE}${TOOL_VERSION}${NC}"
 
 # Check for updates information
 echo -e "\nTo update the tool in the future, run:"
-echo -e "${BLUE}curl -fsSL https://raw.githubusercontent.com/pedropaf/dokku-migration/${BRANCH}/install.sh | bash${NC}"
+echo -e "${BLUE}curl -fsSL https://raw.githubusercontent.com/kidGodzilla/dokku-migration/${BRANCH}/install.sh | bash${NC}"
 echo -e "or"
-echo -e "${BLUE}curl -fsSL https://raw.githubusercontent.com/pedropaf/dokku-migration/${BRANCH}/install.sh | bash -s -- --force${NC}"
+echo -e "${BLUE}curl -fsSL https://raw.githubusercontent.com/kidGodzilla/dokku-migration/${BRANCH}/install.sh | bash -s -- --force${NC}"

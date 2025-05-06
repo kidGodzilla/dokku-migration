@@ -19,7 +19,7 @@ A command-line tool for easily migrating Dokku applications and databases betwee
 ### Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/pedropaf/dokku-migration/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kidGodzilla/dokku-migration/main/install.sh | bash
 ```
 
 This will:
