@@ -4,25 +4,28 @@ set -euo pipefail
 CONFIG_FILE="/root/.dokku-migration-config"
 LAST_MIGRATION_FILE="/root/.dokku-migration/tmp/last_migration"
 
+# load your APPS array (and any other vars) here
 source "$CONFIG_FILE"
 TEMP_DIR=$(cat "$LAST_MIGRATION_FILE")
 
 for app in "${APPS[@]}"; do
-  echo "▶️  Processing $app..."
+  echo
+  echo "▶️  Bootstrapping $app..."
 
   APP_DIR="$TEMP_DIR/apps/$app"
   IMAGE_TAR="$APP_DIR/app.docker.tar.gz"
   SCALE_FILE="$APP_DIR/scale"
 
-  # 1) Load & tag
+  # 1) Load the image
   if [ -f "$IMAGE_TAR" ]; then
-    echo "📦 Loading image for $app..."
+    echo "📦 Loading image for $app…"
     docker load < "$IMAGE_TAR"
   fi
 
-  IMAGE_ID=$(docker images --format "{{.ID}}" | head -n1)
+  # Simplified lookup of the image ID by tag
+  IMAGE_ID=$(docker images dokku/"$app":latest --format "{{.ID}}" | head -n1)
   if [ -z "$IMAGE_ID" ]; then
-    echo "⚠️  No image found for $app, skipping."
+    echo "⚠️  No Docker image found for $app, skipping."
     continue
   fi
 
@@ -30,43 +33,55 @@ for app in "${APPS[@]}"; do
   echo "🏷️  Tagging $IMAGE_ID → $TAG"
   docker tag "$IMAGE_ID" "$TAG"
 
-  # 2) Try rebuild (uses latest tag)
-  echo "🔄 Attempting dokku ps:rebuild $app..."
-  if dokku ps:rebuild "$app"; then
-    echo "✅ Rebuild succeeded."
-    # restore buildpack mode
-    dokku builder:set "$app" selected buildpacks >/dev/null
-  else
-    echo "⚠️  Rebuild failed — falling back to docker-run bootstrap."
-    # 3) Fallback: run container as root so /cache chown works
-    docker run --rm \
-      --user root \
-      --label com.dokku.app-name="$app" \
-      "dokku/$app:latest"
-  fi
-
-  # 4) Scaling
-  if [ -f "$SCALE_FILE" ]; then
+  # helper to apply scaling
+  apply_scaling() {
+    [ -f "$SCALE_FILE" ] || return
     declare -A SCALES
-    while read -r line; do
+    while IFS= read -r line; do
       [[ $line =~ ^([a-zA-Z0-9_-]+):[[:space:]]*([0-9]+)$ ]] || continue
       SCALES["${BASH_REMATCH[1]}"]=${BASH_REMATCH[2]}
     done < "$SCALE_FILE"
-
-    SCALE_CMD=""
-    for proc in "${!SCALES[@]}"; do
-      SCALE_CMD+="$proc=${SCALES[$proc]} "
+    local cmd=""
+    for p in "${!SCALES[@]}"; do
+      cmd+="$p=${SCALES[$p]} "
     done
-
-    if [ -n "$SCALE_CMD" ]; then
-      echo "📈 Scaling $app: $SCALE_CMD"
-      dokku ps:scale "$app" $SCALE_CMD
+    if [ -n "$cmd" ]; then
+      echo "📈 Scaling $app: $cmd"
+      dokku ps:scale "$app" $cmd
     fi
+  }
+
+  # 3) Attempt a normal Dokku rebuild → restart
+  if dokku ps:rebuild "$app"; then
+    echo "✅ Rebuild succeeded, resetting to buildpacks…"
+    dokku builder:set "$app" selected buildpacks >/dev/null
+
+    apply_scaling
+
+    if dokku ps:restart "$app"; then
+      echo "✅ $app restarted successfully."
+      continue
+    else
+      echo "⚠️  Restart failed — falling back to docker-run bootstrap."
+    fi
+  else
+    echo "⚠️  Rebuild failed — falling back to docker-run bootstrap."
   fi
 
-  # finally, restart
-  dokku ps:restart "$app"
-  echo "✅ $app is up and running."
+  # 4) Fallback: run the container as root with the Dokku label
+  echo "🚀 Bootstrapping via docker run…"
+  docker run --rm \
+    --user root \
+    --label com.dokku.app-name="$app" \
+    "$TAG"
+
+  # apply scaling again in case fallback created the container
+  apply_scaling
+
+  # final restart just in case
+  dokku ps:restart "$app" || true
+  echo "✅ $app is up (via fallback) and ready for git-push updates."
 done
 
-echo "🎉 All apps processed — images bootstrapped, scaled, and started."
+echo
+echo "🎉 All apps processed — images bootstrapped, scaled, and ready for future git pushes."
